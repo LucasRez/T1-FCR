@@ -3,6 +3,8 @@
 import math
 import rospy
 import tf
+import grafo
+import dijkstra
 
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
@@ -11,6 +13,7 @@ from nav_msgs.msg import Odometry
 class Pioneer:
     def __init__(self):
         rospy.init_node('pioneer_controller', anonymous=True)
+        rospy.loginfo("Initializing...")
         self.MOV_SPEED = 0.5
         self.TURN_SPEED = 0.5
         self.MOVING = 0
@@ -24,6 +27,8 @@ class Pioneer:
         self.XY_GOAL_TOLERANCE = 0.5
         self.YAW_GOAL_TOLERANCE = 0.05
 
+        self.map = grafo.load_map()
+
         self.obstacle_left = False
         self.obstacle_right = False
         self.obstacle_front = False
@@ -31,6 +36,7 @@ class Pioneer:
         self.laser_offset = self.LASER_FRONT_OFFSET_MOVING
         self.avoiding_left = False
         self.avoiding_right = False
+        self.en_route = False
 
         self.mov_publisher = rospy.Publisher('cmd_vel', Twist, queue_size=10)
         self.laser_subscriber = rospy.Subscriber('hokuyo_scan', LaserScan, self.laser_callback)
@@ -43,11 +49,14 @@ class Pioneer:
         self.obstacles_right = []
         self.laser_ranges = []
         self.goals = []
+        self.current_route = []
         self.position_x = 0.0
         self.position_y = 0.0
         self.yaw = 0.0
         self.goal_distance = 0
         self.goal_angle = 0
+        
+        rospy.loginfo("Ready to recieve")
         
     def move_forward(self):
         vel_msg = Twist()
@@ -110,6 +119,10 @@ class Pioneer:
     def goal_callback(self, data):
         goal_x = round(data.pose.pose.position.x, 4)
         goal_y = round(data.pose.pose.position.y, 4)
+        dest = grafo.qual_nodo(self.map, goal_x, goal_y)
+        if dest == None:
+            rospy.loginfo("Destination unreachable, discarding goal")
+            return
         quaternion = (
             data.pose.pose.orientation.x,
             data.pose.pose.orientation.y,
@@ -158,8 +171,8 @@ class Pioneer:
         obst_pos_y = round(self.position_y + (min_dist * math.sin(angle)), 4)
     
     def distance_to_goal(self):
-        delta_x = self.goals[0][0] - self.position_x
-        delta_y = self.goals[0][1] - self.position_y
+        delta_x = self.current_route[0][0] - self.position_x
+        delta_y = self.current_route[0][1] - self.position_y
         self.goal_distance = math.sqrt(math.pow(delta_x, 2) + math.pow(delta_y, 2))
         self.goal_angle = math.atan2(delta_y, delta_x)
 
@@ -177,10 +190,14 @@ class Pioneer:
             self.move_forward()
             self.distance_to_goal()
         self.stop()
-        self.spin_to_yaw(self.goals[0][2])
-        rospy.loginfo("Arrived at: " + self.goals[0].__str__())
-        rospy.loginfo("Current position at: " + (self.position_x, self.position_y, self.yaw).__str__())
-        self.goals.pop(0)
+        if len(self.current_route) == 1:
+            self.spin_to_yaw(self.current_route[0][2])
+        rospy.loginfo("Arrived at: " + self.current_route[0].__str__())
+        self.current_route.pop(0)
+        if len(self.current_route) == 0:
+            self.en_route = False
+            rospy.loginfo("Arrived at goal: " + self.goals[0].__str__())
+            self.goals.pop(0)
 
     def avoid_obstacle(self):
         if self.obstacle_front:
@@ -221,35 +238,31 @@ class Pioneer:
         else:
             self.obstacle_left = False
 
+    def calculate_route(self):
+        origin = grafo.qual_nodo(self.map, self.position_x, self.position_y)
+        dest = grafo.qual_nodo(self.map, self.goals[0][0], self.goals[0][1])
+        if dest == None:
+            rospy.loginfo("Destination unreachable, discarding goal")
+            self.goals.pop(0)
+            return
+        path = dijkstra.dijkstra(self.map, origin.id, dest.id)
+        for p in path:
+            self.current_route.append((p.x, p.y, self.yaw))
+        self.current_route.append(self.goals[0])
+        self.en_route = True
+        rospy.loginfo("Calculated path: " + self.current_route.__str__())
+        
+
     def mover(self):
         while not rospy.is_shutdown():
             self.find_obstacles()
-            # if self.current_status == self.MOVING:
-            #     if self.obstacle_front:
-            #         rospy.loginfo("changing to avoid mode")
-            #         self.current_status = self.AVOIDING
-            #         self.laser_offset = self.LASER_FRONT_OFFSET_AVOIDING
-            #         self.calculate_obstacle_position()
-            #     else:
-            #         vel_msg = self.move_forward()
-            # elif self.current_status == self.AVOIDING:
-            #     if self.obstacle_front:
-            #         self.calculate_obstacle_position()
-            #         if self.obstacle_left and not self.obstacle_right:
-            #             vel_msg = self.spin_right()
-            #         else:
-            #             vel_msg = self.spin_left()
-            #     else:
-            #         rospy.loginfo("changing to move mode")                    
-            #         self.current_status = self.MOVING
-            #         self.laser_offset = self.LASER_FRONT_OFFSET_MOVING
-            #         vel_msg = self.move_forward()
-            # else:
-            #      self.stop()
             if len(self.goals):
                 if self.current_status == self.MOVING:
-                    rospy.loginfo("moving to: " + self.goals[0].__str__())
-                    self.move_to_goal()
+                    if not self.en_route:
+                        self.calculate_route()
+                    else: 
+                        rospy.loginfo("moving to: " + self.current_route[0].__str__())
+                        self.move_to_goal()
                 elif self.current_status == self.AVOIDING:
                     rospy.loginfo("avoiding obstacle")
                     self.avoid_obstacle()
