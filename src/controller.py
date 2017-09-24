@@ -119,6 +119,7 @@ class Pioneer:
         euler = tf.transformations.euler_from_quaternion(quaternion)
         goal_yaw = round(euler[2], 4)
         self.goals.append((goal_x, goal_y, goal_yaw))
+        rospy.loginfo("New goal recieved:" + self.goals.__str__())
 
     def pose_callback(self, data):
         self.position_x = round(data.pose.pose.position.x, 4)
