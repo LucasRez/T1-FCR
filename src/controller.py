@@ -247,8 +247,8 @@ class Pioneer:
             return
         path = dijkstra.dijkstra(self.map, origin.id, dest.id)
         for p in path:
-            self.current_route.append((p.x, p.y, self.yaw))
-        self.current_route.append(self.goals[0])
+            self.current_route.append((p.x, p.y, self.yaw, p.id))
+        self.current_route.append((self.goals[0][0],self.goals[0][1], self.goals[0][2], dest.id))
         self.en_route = True
         rospy.loginfo("Calculated path: " + self.current_route.__str__())
         
