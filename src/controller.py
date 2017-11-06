@@ -25,7 +25,8 @@ class Pioneer:
         self.LASER_FRONT_OFFSET_MOVING = 20
         self.LASER_FRONT_OFFSET_AVOIDING = 25
         self.XY_GOAL_TOLERANCE = 0.5
-        self.YAW_GOAL_TOLERANCE = 0.05
+        self.YAW_GOAL_TOLERANCE = 0.1
+        self.SCAN_RANGE = 5
 
         self.map = grafo.load_map()
 
@@ -37,6 +38,7 @@ class Pioneer:
         self.avoiding_left = False
         self.avoiding_right = False
         self.en_route = False
+        self.current_node = None
 
         self.mov_publisher = rospy.Publisher('cmd_vel', Twist, queue_size=10)
         self.laser_subscriber = rospy.Subscriber('hokuyo_scan', LaserScan, self.laser_callback)
@@ -137,6 +139,8 @@ class Pioneer:
     def pose_callback(self, data):
         self.position_x = round(data.pose.pose.position.x, 4)
         self.position_y = round(data.pose.pose.position.y, 4)
+        self.current_node = grafo.qual_nodo(self.map, self.position_x, self.position_y)
+        rospy.loginfo("Current node: " + str(self.current_node.id))
         quaternion = (
             data.pose.pose.orientation.x,
             data.pose.pose.orientation.y,
@@ -148,6 +152,10 @@ class Pioneer:
 
     def laser_callback(self, data):
         self.laser_ranges = list(data.ranges)[::8]
+        # self.detection_laser = [(
+        #     round(x, 4), self.laser_ranges.index(x)*2 - self.LASER_MID)
+        #     for x in
+        #     self.laser_ranges]
         self.obstacles_front = [(
             round(x, 4), self.laser_ranges.index(x)*2 - self.LASER_MID)
             for x in 
@@ -170,6 +178,12 @@ class Pioneer:
         obst_pos_x = round(self.position_x + (min_dist * math.cos(angle)), 4)
         obst_pos_y = round(self.position_y + (min_dist * math.sin(angle)), 4)
     
+    # def calculate_object_position(self):
+    #     for (dist, angle) in self.detection_laser:
+    #         angle = self.yaw + math.radians(angle)
+    #         obst_pos_x = round(self.position_x + (dist * math.cos(angle)), 4)
+    #         obst_pos_y = round(self.position_y + (dist * math.sin(angle)), 4)
+
     def distance_to_goal(self):
         delta_x = self.current_route[0][0] - self.position_x
         delta_y = self.current_route[0][1] - self.position_y
@@ -252,6 +266,8 @@ class Pioneer:
         self.en_route = True
         rospy.loginfo("Calculated path: " + self.current_route.__str__())
         
+    # def initialize_grid(self):
+    #     pass
 
     def mover(self):
         while not rospy.is_shutdown():

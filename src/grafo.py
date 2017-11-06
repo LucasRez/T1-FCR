@@ -69,11 +69,11 @@ class Grafo:
         return self.vertDict.keys()
 
 def load_map():
-    d_quad = 1.30 + 0.1
-    y_mid = 7.14 + 0.1
-    x_left = 10.99 + 0.1
-    x_mid_right = 6.65 + 0.1
-    x_corridor = 3.47 + 0.1
+    d_quad = 1.30 + 0.5
+    y_mid = 7.14 + 0.5
+    x_left = 10.99 + 0.5
+    x_mid_right = 6.65 + 0.5
+    x_corridor = 3.47 + 0.5
 
     mapa = Grafo()
 
